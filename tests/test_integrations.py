@@ -96,6 +96,33 @@ def test_requests_adapter_records_real_local_http(tmp_path: Path) -> None:
     assert loaded.verify_integrity().status == "verified_with_boundaries"
 
 
+def test_httpx_async_adapter_records_real_local_http(tmp_path: Path) -> None:
+    asyncio = __import__("asyncio")
+    httpx = pytest.importorskip("httpx")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), JsonHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    async def request() -> Path:
+        with auto_run("httpx-async-real", root=tmp_path / "runs", backend="trace", include_paths=[Path(__file__).parent]) as run:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"http://127.0.0.1:{server.server_port}/status", timeout=5)
+                assert response.status_code == 200
+        return run.result.artifact_dir
+
+    try:
+        artifact = asyncio.run(request())
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    loaded = load_run(artifact)
+    events = json.loads((loaded.artifact_dir / "execution" / "trace.json").read_text(encoding="utf-8"))
+    assert any(event["event"] == "http_request_prepared" and event["payload"].get("adapter") == "httpx" for event in events)
+    assert any(event["event"] == "http_request_observed" and event["payload"].get("adapter") == "httpx" for event in events)
+    assert loaded.verify_integrity().status == "verified_with_boundaries"
+
+
 def test_httpx_adapter_records_real_local_http(tmp_path: Path) -> None:
     httpx = pytest.importorskip("httpx")
     server = ThreadingHTTPServer(("127.0.0.1", 0), JsonHandler)

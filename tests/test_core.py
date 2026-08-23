@@ -8,6 +8,11 @@ import pytest
 
 import runproof_engine
 from runproof_engine import PolicyDenied, RunProofError, load_run, verified
+from runproof_engine.environment import (
+    compare_environment_lock,
+    load_environment_lock,
+    reconstruction_plan,
+)
 
 
 def multiply(value: int, factor: int = 2) -> int:
@@ -55,6 +60,21 @@ def test_run_records_real_input_steps_output_and_checks(tmp_path: Path) -> None:
     assert {"run", "input", "step", "value", "output", "check"}.issubset(kinds)
     assert {"contains", "used", "produces", "input", "output", "asserts"}.issubset(edge_kinds)
     assert (artifact / "provenance.json").is_file()
+
+
+def test_environment_lock_is_saved_and_reconstruction_is_explicit(tmp_path: Path) -> None:
+    with verified("environment-lock", root=tmp_path / "runs") as run:
+        run.assert_true(True, "environment captured")
+
+    lock_path = run.result.artifact_dir / "environment" / "environment.lock.json"
+    lock = load_environment_lock(lock_path)
+    comparison = compare_environment_lock(lock)
+    plan = reconstruction_plan(lock)
+    assert lock["packages"]
+    assert comparison["match"] is True
+    assert plan["approval_required"] is True
+    assert plan["safe_to_execute"] is False
+    assert plan["commands"][0][0] == "python"
 
 
 def test_relative_root_is_resolved_and_outputs_are_verifiable(tmp_path: Path, monkeypatch) -> None:

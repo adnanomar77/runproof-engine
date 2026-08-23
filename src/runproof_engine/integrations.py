@@ -294,6 +294,65 @@ class SQLiteAdapter:
         return lambda: _restore(originals)
 
 
+class PsycopgAdapter:
+    name = "psycopg"
+    info = AdapterInfo("psycopg", "1", ("sql-statements", "parameter-summary", "database-state-boundary"))
+
+    def install(self, context: RunContext) -> Callable[[], None]:
+        import psycopg
+
+        originals: list[tuple[Any, str, Any]] = []
+        cursor_class = getattr(psycopg, "Cursor", None)
+        original = getattr(cursor_class, "execute", None) if cursor_class is not None else None
+        if original is None:
+            raise ImportError("psycopg Cursor.execute is unavailable")
+
+        @functools.wraps(original)
+        def wrapped(cursor: Any, query: Any, params: Any = None, *args: Any, **kwargs: Any) -> Any:
+            result = original(cursor, query, params, *args, **kwargs)
+            context._event(
+                "sql_query",
+                {"adapter": self.name, "database": "postgresql", "statement": str(query)[:2000], "parameters": safe_value(params)},
+            )
+            context.boundary(
+                "database_state",
+                target="postgresql",
+                reason="PostgreSQL transaction and server state are not snapshotted automatically",
+                replay="requires_database_snapshot",
+            )
+            return result
+
+        _patch(cursor_class, "execute", wrapped, originals)
+        context._event("adapter_installed", {"name": self.name, "version": self.info.version})
+        return lambda: _restore(originals)
+
+
+class SQLAlchemyAdapter:
+    name = "sqlalchemy"
+    info = AdapterInfo("sqlalchemy", "1", ("sql-statements", "engine-events", "database-state-boundary"))
+
+    def install(self, context: RunContext) -> Callable[[], None]:
+        from sqlalchemy import event
+        from sqlalchemy.engine import Engine
+
+        def before_cursor_execute(connection: Any, cursor: Any, statement: str, parameters: Any, _context: Any, _executemany: bool) -> None:
+            dialect = getattr(getattr(connection, "dialect", None), "name", "database")
+            context._event(
+                "sql_query",
+                {"adapter": self.name, "database": dialect, "statement": str(statement)[:2000], "parameters": safe_value(parameters)},
+            )
+            context.boundary(
+                "database_state",
+                target=str(dialect),
+                reason="SQLAlchemy adapter records cursor operations but does not snapshot complete database state",
+                replay="requires_database_snapshot",
+            )
+
+        event.listen(Engine, "before_cursor_execute", before_cursor_execute)
+        context._event("adapter_installed", {"name": self.name, "version": self.info.version})
+        return lambda: event.remove(Engine, "before_cursor_execute", before_cursor_execute)
+
+
 class SubprocessAdapter:
     name = "subprocess"
     info = AdapterInfo("subprocess", "1", ("command-metadata", "return-code", "process-boundary"))
@@ -467,8 +526,10 @@ def available_adapters() -> tuple[Any, ...]:
         SubprocessAdapter,
         Boto3Adapter,
         JupyterAdapter,
-        TorchAdapter,
         JoblibAdapter,
+        PsycopgAdapter,
+        SQLAlchemyAdapter,
+        TorchAdapter,
     )
     available: list[Any] = []
     module_names = {
@@ -480,8 +541,10 @@ def available_adapters() -> tuple[Any, ...]:
         SubprocessAdapter: "subprocess",
         Boto3Adapter: "boto3",
         JupyterAdapter: "nbclient",
-        TorchAdapter: "torch",
         JoblibAdapter: "joblib",
+        PsycopgAdapter: "psycopg",
+        SQLAlchemyAdapter: "sqlalchemy",
+        TorchAdapter: "torch",
     }
     import importlib.util
 
@@ -498,7 +561,9 @@ __all__ = [
     "JupyterAdapter",
     "PandasAdapter",
     "PolarsAdapter",
+    "PsycopgAdapter",
     "RequestsAdapter",
+    "SQLAlchemyAdapter",
     "SQLiteAdapter",
     "SubprocessAdapter",
     "TorchAdapter",

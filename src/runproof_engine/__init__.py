@@ -17,7 +17,9 @@ from .integrations import (
     JupyterAdapter,
     PandasAdapter,
     PolarsAdapter,
+    PsycopgAdapter,
     RequestsAdapter,
+    SQLAlchemyAdapter,
     SQLiteAdapter,
     SubprocessAdapter,
     TorchAdapter,
@@ -26,6 +28,7 @@ from .integrations import (
 from .policy import Policy, PolicyDenied, safe_default_policy
 from .provenance import ProvenanceEdge, ProvenanceGraph, ProvenanceNode
 from .replay import LoadedRun, ReplayReport, load_run
+from .tracing import Span, Tracer, format_traceparent, parse_traceparent
 
 __all__ = [
     "Adapter",
@@ -45,6 +48,7 @@ __all__ = [
     "ProvenanceEdge",
     "ProvenanceGraph",
     "ProvenanceNode",
+    "PsycopgAdapter",
     "ReplayReport",
     "ReplayUnavailable",
     "RequestsAdapter",
@@ -52,16 +56,21 @@ __all__ = [
     "RunDiff",
     "RunProofError",
     "RunResult",
+    "SQLAlchemyAdapter",
     "SQLiteAdapter",
+    "Span",
     "StepRecord",
     "SubprocessAdapter",
     "TorchAdapter",
+    "Tracer",
     "UrllibAdapter",
     "auto_run",
     "available_adapters",
     "compare_manifests",
     "default_adapters",
+    "format_traceparent",
     "load_run",
+    "parse_traceparent",
     "safe_default_policy",
     "verified",
 ]

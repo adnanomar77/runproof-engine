@@ -5,6 +5,7 @@ import shutil
 import traceback
 import uuid
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
@@ -13,8 +14,10 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .environment import environment_lock
 from .policy import Policy, PolicyDenied, safe_default_policy
 from .provenance import ProvenanceGraph
+from .tracing import Span, Tracer
 from .utils import (
     environment_snapshot,
     file_metadata,
@@ -130,6 +133,7 @@ class RunContext:
         self.policy = policy or safe_default_policy()
         self.run_id = f"{utc_now().replace(':', '').replace('-', '')}-{uuid.uuid4().hex[:10]}"
         self._provenance = ProvenanceGraph(run_id=self.run_id)
+        self.tracer = Tracer.from_environment()
         self.artifact_dir = self.root / self._safe_name(name) / self.run_id
         self._started_at = utc_now()
         self._started_clock = 0.0
@@ -384,6 +388,26 @@ class RunContext:
         self._event("value_observed", record)
         return value
 
+    @contextmanager
+    def span(self, name: str, *, attributes: dict[str, Any] | None = None):
+        """Create a distributed-trace span and record its lifecycle in the run."""
+        span: Span | None = None
+        try:
+            with self.tracer.span(name, attributes=attributes) as active:
+                span = active
+                self._event("span_started", {"name": name, "span_id": active.span_id, "trace_id": self.tracer.trace_id, "parent_span_id": active.parent_span_id})
+                yield active
+        except BaseException:
+            if span is not None:
+                self._event("span_finished", {"name": name, "span_id": span.span_id, "trace_id": self.tracer.trace_id, "status": "ERROR"})
+            raise
+        else:
+            if span is not None:
+                self._event("span_finished", {"name": name, "span_id": span.span_id, "trace_id": self.tracer.trace_id, "status": span.status})
+
+    def traceparent(self) -> str:
+        return self.tracer.traceparent()
+
     def external_call(
         self,
         name: str,
@@ -593,6 +617,11 @@ class RunContext:
             "steps": [step.to_dict() for step in self._steps],
             "checks": [check.to_dict() for check in self._checks],
             "environment": self._environment,
+            "tracing": {"trace_id": self.tracer.trace_id, "span_count": len(self.tracer.export())},
+            "environment_lock": {
+                "path": "environment/environment.lock.json",
+                "fingerprint": environment_lock(root=self.artifact_dir / "environment").get("lock_fingerprint"),
+            },
             "policy": {
                 "allowed_actions": sorted(self.policy.allowed_actions),
                 "approval_required": sorted(self.policy.approval_required),
@@ -608,6 +637,7 @@ class RunContext:
         write_json(self.artifact_dir / "manifest.json", manifest)
         write_json(self.artifact_dir / "provenance.json", self._provenance.to_dict())
         write_json(self.artifact_dir / "execution" / "trace.json", self._events)
+        write_json(self.artifact_dir / "execution" / "spans.json", self.tracer.export())
         write_json(self.artifact_dir / "checks" / "results.json", [check.to_dict() for check in self._checks])
         write_json(self.artifact_dir / "execution" / "steps.json", [step.to_dict() for step in self._steps])
         write_json(self.artifact_dir / "execution" / "outputs.json", self._outputs)
