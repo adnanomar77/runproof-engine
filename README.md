@@ -56,6 +56,33 @@ with auto_run(
 
 Automatic capture is an evidence layer, not a sandbox. It does not serialize every local variable, intercept every native extension, or make external services deterministic. Use adapters or explicit `run.input`, `run.step`, and `run.external_call` calls when a boundary needs stronger evidence.
 
+### Optional real-library adapters
+
+When an optional dependency is installed, `auto_run` discovers and activates its adapter by default. The current adapters observe real operations through documented hooks or narrowly scoped wrappers:
+
+| Integration | Captured evidence | Boundary behavior |
+| --- | --- | --- |
+| pandas | DataFrame reads/writes, summaries, file hashes | Local file outputs can be archived; in-memory and native execution remain bounded |
+| Polars | DataFrame reads/writes, summaries, file hashes | Requires the optional `polars` package |
+| requests | Prepared URL, redacted headers, status code | Response bodies are not consumed automatically; live network remains a boundary |
+| HTTPX | Sync and async request/response hooks | Streaming bodies are not consumed automatically; live network remains a boundary |
+| SQLite | SQL statements and database path | Database transaction state is a boundary; mutable files can become `non_reproducible` |
+| SQLAlchemy and psycopg | Cursor statements and database dialect | Requires the optional database package and a live database policy |
+| subprocess | Command summary, return code, stdout/stderr digests | Process environment and side effects remain a boundary |
+| Boto3 | Service operation, redacted parameters, response summary | Cloud object/service state remains a boundary |
+| Jupyter/nbclient | Notebook execution lifecycle | Kernel state and external effects remain a boundary |
+| Torch and joblib | Model save/load file evidence | Device/native runtime state may remain a boundary |
+
+The optional adapters never execute installation commands and never send captured data to RunProof services. They can be disabled or replaced by passing an explicit `adapters=` collection to `auto_run`.
+
+## Provenance, environment, and distributed tracing
+
+Every completed run now contains `provenance.json`, a graph connecting the run to inputs, steps, values, outputs, checks, observations, and evidence boundaries. It is available through `load_run(path).provenance` and is designed to make later diffs explainable without pretending to prove causality.
+
+The artifact also contains `environment/environment.lock.json`. It records the interpreter, platform, and installed package versions and can be compared with `compare_environment_lock(...)`. `reconstruction_plan(...)` returns reviewable pip commands but deliberately marks them as requiring approval; RunProof never installs packages silently. Package locks do not reproduce operating-system state, hardware, external services, or changing data.
+
+For service-to-service workflows, use `run.span(...)` and propagate `run.traceparent()`. Spans are stored in `execution/spans.json` using a dependency-free W3C traceparent-compatible format. OpenTelemetry exporters can be added as adapters without making OpenTelemetry a runtime dependency.
+
 ## Replay and comparison
 
 ```python
@@ -87,7 +114,7 @@ RunProof records metadata and hashes by default. Full input copying is opt-in. S
 
 ## Project status
 
-The current repository implements the local core: run lifecycle, file fingerprints, JSON-safe artifacts, explicit step tracing, automatic Python call/return observation, assertions, replay readiness, and explainable diffs. Optional integrations are intentionally separated from the core so the library remains useful without a cloud account or a specific AI provider.
+The current repository implements the local core, automatic observation, provenance graph, environment lock, distributed trace context, and optional real-library integrations. It remains useful without a cloud account or a specific AI provider. Automatic observation still has explicit coverage boundaries; it is not a universal sandbox or a guarantee of perfect replay for arbitrary Python.
 
 ## License
 
