@@ -128,6 +128,10 @@ def test_explainable_diff_identifies_input_and_output_changes(tmp_path: Path) ->
     rendered = comparison.render()
     assert "input content changed" in rendered
     assert "step output changed" in rendered
+    assert any(
+        difference.area == "explanation" and difference.confidence == "inference"
+        for difference in comparison.differences
+    )
 
 
 def test_policy_blocks_sensitive_action_and_preserves_artifact(tmp_path: Path) -> None:

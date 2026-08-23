@@ -82,6 +82,9 @@ def compare_manifests(left: dict[str, Any], right: dict[str, Any]) -> RunDiff:
     _compare_steps(left.get("steps", []), right.get("steps", []), result)
     _compare_outputs(left.get("outputs", []), right.get("outputs", []), result)
     _compare_checks(left.get("checks", []), right.get("checks", []), result)
+    _compare_observations(left.get("observations", []), right.get("observations", []), result)
+    _compare_boundaries(left.get("boundaries", []), right.get("boundaries", []), result)
+    _compare_execution(left.get("execution", {}), right.get("execution", {}), result)
     _compare_environment(left.get("environment"), right.get("environment"), result)
     if left_run.get("status") != right_run.get("status"):
         result.differences.append(Difference(
@@ -92,6 +95,7 @@ def compare_manifests(left: dict[str, Any], right: dict[str, Any]) -> RunDiff:
             after=right_run.get("status"),
             explanation="run status changed",
         ))
+    _add_causal_candidates(result)
     return result
 
 
@@ -174,6 +178,74 @@ def _compare_checks(left: list[dict[str, Any]], right: list[dict[str, Any]], res
                 "checks", f"{name}.passed", "changed", left_map[name].get("passed"), right_map[name].get("passed"),
                 "check outcome changed",
             ))
+
+
+def _compare_observations(left: list[dict[str, Any]], right: list[dict[str, Any]], result: RunDiff) -> None:
+    left_map, right_map = _index(left), _index(right)
+    for name in sorted(set(left_map) | set(right_map)):
+        if name not in left_map or name not in right_map:
+            result.differences.append(Difference("observations", name, "changed", left_map.get(name), right_map.get(name), "observed value set changed"))
+        elif left_map[name].get("summary", {}).get("fingerprint") != right_map[name].get("summary", {}).get("fingerprint"):
+            result.differences.append(Difference(
+                "observations", f"{name}.fingerprint", "changed",
+                left_map[name].get("summary", {}).get("fingerprint"),
+                right_map[name].get("summary", {}).get("fingerprint"),
+                "observed in-memory value changed",
+            ))
+
+
+def _compare_boundaries(left: list[dict[str, Any]], right: list[dict[str, Any]], result: RunDiff) -> None:
+    if left != right:
+        result.differences.append(Difference(
+            "boundaries", "records", "changed", left, right,
+            "external or non-deterministic evidence boundaries changed",
+        ))
+
+
+def _execution_signature(execution: dict[str, Any]) -> list[tuple[str, Any]]:
+    events = execution.get("trace", []) if isinstance(execution, dict) else []
+    ignored = {"run_started", "run_finished", "checks_completed", "observer_started", "adapter_installed", "adapter_uninstalled"}
+    signature: list[tuple[str, Any]] = []
+    for item in events:
+        if not isinstance(item, dict) or item.get("event") in ignored:
+            continue
+        payload = item.get("payload", {})
+        if isinstance(payload, dict):
+            payload = {key: value for key, value in payload.items() if key not in {"at", "duration_ms"}}
+        signature.append((str(item.get("event")), payload))
+    return signature
+
+
+def _compare_execution(left: dict[str, Any], right: dict[str, Any], result: RunDiff) -> None:
+    left_signature = _execution_signature(left)
+    right_signature = _execution_signature(right)
+    if left_signature != right_signature:
+        result.differences.append(Difference(
+            "execution", "trace", "changed", left_signature, right_signature,
+            "observable execution event sequence changed",
+        ))
+
+
+def _add_causal_candidates(result: RunDiff) -> None:
+    areas = {difference.area for difference in result.differences}
+    if "inputs" in areas and "outputs" in areas:
+        result.differences.append(Difference(
+            "explanation", "input_to_output", "candidate", "input changed", "output changed",
+            "candidate cause: an input change coincides with an output change; this is evidence-backed correlation, not proof of causality",
+            confidence="inference",
+        ))
+    elif "environment" in areas and "outputs" in areas:
+        result.differences.append(Difference(
+            "explanation", "environment_to_output", "candidate", "environment changed", "output changed",
+            "candidate cause: an environment change coincides with an output change; inspect the divergent step before attributing causality",
+            confidence="inference",
+        ))
+    if "boundaries" in areas:
+        result.differences.append(Difference(
+            "explanation", "boundary_change", "warning", "boundary changed", "boundary changed",
+            "replay comparison is weaker because the external or non-deterministic evidence boundary changed",
+            confidence="evidence",
+        ))
 
 
 def _compare_environment(left: dict[str, Any] | None, right: dict[str, Any] | None, result: RunDiff) -> None:
