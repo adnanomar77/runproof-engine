@@ -14,6 +14,7 @@ from pathlib import Path
 from types import FrameType, TracebackType
 from typing import Any
 
+from .adapters import Adapter, default_adapters
 from .core import RunContext
 from .utils import safe_value, summarize
 
@@ -48,6 +49,7 @@ class AutoCapture:
         backend: str = "auto",
         capture_returns: bool = True,
         capture_audit: bool = True,
+        adapters: tuple[Adapter, ...] | list[Adapter] | None = None,
     ) -> None:
         if backend not in {"auto", "monitoring", "trace"}:
             raise ValueError("backend must be 'auto', 'monitoring', or 'trace'")
@@ -56,6 +58,8 @@ class AutoCapture:
         self.include_stdlib = include_stdlib
         self.capture_returns = capture_returns
         self.capture_audit = capture_audit
+        self.adapters = tuple(default_adapters() if adapters is None else adapters)
+        self._uninstallers: list[Any] = []
         self.include_paths = [Path(path).expanduser().resolve() for path in (include_paths or [])]
         self._started = False
         self._stopped = False
@@ -103,6 +107,7 @@ class AutoCapture:
         self._stopped = False
         if self.capture_audit:
             self._register_audit_observer()
+        self._install_adapters()
         if self.backend in {"auto", "monitoring"} and self._start_monitoring():
             return
         if self.backend == "monitoring":
@@ -112,6 +117,12 @@ class AutoCapture:
     def stop(self) -> None:
         if not self._started or self._stopped:
             return
+        for uninstall in reversed(self._uninstallers):
+            try:
+                uninstall()
+            except (RuntimeError, TypeError, ValueError):
+                self.context._event("adapter_uninstall_failed", {})
+        self._uninstallers.clear()
         self._stopped = True
         if self.capture_audit:
             type(self)._active_observers.discard(self)
@@ -132,6 +143,19 @@ class AutoCapture:
             sys.settrace(self._previous_trace)
         if hasattr(threading, "settrace") and (self._previous_thread_trace is not None or threading.gettrace() is not None):
             threading.settrace(self._previous_thread_trace)
+
+    def _install_adapters(self) -> None:
+        for adapter in self.adapters:
+            try:
+                uninstall = adapter.install(self.context)
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError) as error:
+                self.context._event(
+                    "adapter_install_failed",
+                    {"name": getattr(adapter, "name", type(adapter).__name__), "error": str(error)},
+                )
+                continue
+            if callable(uninstall):
+                self._uninstallers.append(uninstall)
 
     def _register_audit_observer(self) -> None:
         with type(self)._audit_lock:
@@ -274,7 +298,7 @@ def auto_run(name: str, **kwargs: Any) -> AutoCapture:
     """Create a context manager that observes Python execution automatically."""
     capture_options = {
         key: kwargs.pop(key)
-        for key in ("include_paths", "include_stdlib", "backend", "capture_returns", "capture_audit")
+        for key in ("include_paths", "include_stdlib", "backend", "capture_returns", "capture_audit", "adapters")
         if key in kwargs
     }
     context = RunContext(name, **kwargs)

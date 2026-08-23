@@ -1,3 +1,4 @@
+from .adapters import Adapter, AdapterInfo, UrllibAdapter, default_adapters
 from .auto import AutoCapture, auto_run
 from .core import (
     CheckRecord,
@@ -13,6 +14,8 @@ from .policy import Policy, PolicyDenied, safe_default_policy
 from .replay import LoadedRun, ReplayReport, load_run
 
 __all__ = [
+    "Adapter",
+    "AdapterInfo",
     "AutoCapture",
     "CheckRecord",
     "Difference",
@@ -26,8 +29,10 @@ __all__ = [
     "RunProofError",
     "RunResult",
     "StepRecord",
+    "UrllibAdapter",
     "auto_run",
     "compare_manifests",
+    "default_adapters",
     "load_run",
     "safe_default_policy",
     "verified",

@@ -83,7 +83,12 @@ class LoadedRun:
                         reasons.append(f"integrity mismatch: {record['path']}")
             except (KeyError, TypeError, ValueError):
                 reasons.append("integrity manifest is invalid")
-        status = "verified" if not reasons else "non_reproducible"
+        if reasons:
+            status = "non_reproducible"
+        elif self.manifest.get("boundaries"):
+            status = "verified_with_boundaries"
+        else:
+            status = "verified"
         return ReplayReport(status=status, run_id=self.run_id, mode="integrity", reasons=reasons)
 
     def replay(
