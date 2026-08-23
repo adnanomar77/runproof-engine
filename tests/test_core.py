@@ -42,6 +42,14 @@ def test_run_records_real_input_steps_output_and_checks(tmp_path: Path) -> None:
     assert loaded.replay(mode="strict").status == "replay_ready"
 
 
+def test_relative_root_is_resolved_and_outputs_are_verifiable(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with verified("relative_root", root="runs") as run:
+        run.output("result.json", {"ok": True})
+    assert run.result.artifact_dir.is_absolute()
+    assert load_run(run.result.artifact_dir).verify_integrity().status == "verified"
+
+
 def test_captured_input_can_verify_after_original_is_removed(tmp_path: Path) -> None:
     source = tmp_path / "source.txt"
     source.write_text("captured\n", encoding="utf-8")

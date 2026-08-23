@@ -122,7 +122,7 @@ class RunContext:
         policy: Policy | None = None,
     ) -> None:
         self.name = name
-        self.root = Path(root)
+        self.root = Path(root).expanduser().resolve()
         self.copy_inputs = copy_inputs
         self.capture_environment = capture_environment
         self.fail_on_check = fail_on_check
