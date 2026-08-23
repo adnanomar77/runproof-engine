@@ -266,7 +266,7 @@ class AutoCapture:
         self._record(
             "python_call",
             {
-                **self._source_details(filename, int(getattr(code, "co_firstlineno", 0)), str(getattr(code, "co_qualname", code.co_name))),
+                **self._source_details(filename, int(getattr(code, "co_firstlineno", 0)), str(getattr(code, "co_qualname", getattr(code, "co_name", "<code>")))),
                 "instruction_offset": instruction_offset,
                 "backend": "sys.monitoring",
             },
@@ -279,7 +279,7 @@ class AutoCapture:
         self._record(
             "python_return",
             {
-                **self._source_details(filename, int(getattr(code, "co_firstlineno", 0)), str(getattr(code, "co_qualname", code.co_name))),
+                **self._source_details(filename, int(getattr(code, "co_firstlineno", 0)), str(getattr(code, "co_qualname", getattr(code, "co_name", "<code>")))),
                 "instruction_offset": instruction_offset,
                 "return": summarize(retval),
                 "backend": "sys.monitoring",
@@ -292,7 +292,11 @@ class AutoCapture:
         filename = frame.f_code.co_filename
         if not self._should_capture(filename):
             return self._trace
-        details = self._source_details(filename, frame.f_lineno, frame.f_code.co_qualname)
+        details = self._source_details(
+            filename,
+            frame.f_lineno,
+            getattr(frame.f_code, "co_qualname", getattr(frame.f_code, "co_name", "<code>")),
+        )
         details["backend"] = "sys.settrace"
         if event == "call":
             self._record("python_call", details)
