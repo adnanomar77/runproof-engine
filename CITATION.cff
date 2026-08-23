@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use RunProof Engine, please cite it as below."
+title: "RunProof Engine"
+version: 0.2.0
+doi: 10.5281/zenodo.22072586
+type: software
+abstract: "A local-first evidence, verification, replay-readiness, provenance, and explainable-diff layer for real Python workflows."
+authors:
+  - name: "RunProof Contributors"
+date-released: 2026-08-23
+license: Apache-2.0
+repository-code: "https://github.com/adnanomar77/runproof-engine"
+url: "https://pypi.org/project/runproof-engine/"
+keywords:
+  - reproducibility
+  - provenance
+  - observability
+  - Python
+  - replay
+  - explainable diff

@@ -1,5 +1,7 @@
 # RunProof
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22072586.svg)](https://doi.org/10.5281/zenodo.22072586)
+
 RunProof is a Python library for recording, validating, replaying, and comparing real computational runs. It turns a Python execution into an inspectable artifact containing inputs, outputs, code references, environment metadata, checks, and an execution trace.
 
 The distinctive feature is **Explainable Diff**: when two runs differ, RunProof compares input fingerprints, schemas, output summaries, step status, code fingerprints, and environment metadata, then reports evidence-backed causes instead of only saying that the runs are different.
