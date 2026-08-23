@@ -92,6 +92,33 @@ class ProvenanceGraph:
         }
 
     @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> ProvenanceGraph:
+        graph = cls(run_id=str(payload.get("run_id", "unknown")))
+        graph.nodes.clear()
+        for record in payload.get("nodes", []):
+            node_id = str(record.get("id", ""))
+            if node_id:
+                graph.nodes[node_id] = ProvenanceNode(
+                    node_id=node_id,
+                    kind=str(record.get("kind", "unknown")),
+                    label=str(record.get("label", "node")),
+                    digest=record.get("digest"),
+                    attributes=dict(record.get("attributes", {})),
+                )
+        graph.edges = [
+            ProvenanceEdge(
+                source=str(record.get("source", "")),
+                target=str(record.get("target", "")),
+                kind=str(record.get("kind", "related")),
+                attributes=dict(record.get("attributes", {})),
+            )
+            for record in payload.get("edges", [])
+            if record.get("source") and record.get("target")
+        ]
+        graph.run_node = next((node_id for node_id, node in graph.nodes.items() if node.kind == "run"), graph.run_node)
+        return graph
+
+    @classmethod
     def from_manifest(cls, manifest: dict[str, Any]) -> ProvenanceGraph:
         run = manifest.get("run", {})
         graph = cls(run_id=str(run.get("run_id", "unknown")))

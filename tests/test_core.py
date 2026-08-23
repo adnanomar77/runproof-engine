@@ -70,11 +70,15 @@ def test_environment_lock_is_saved_and_reconstruction_is_explicit(tmp_path: Path
     lock = load_environment_lock(lock_path)
     comparison = compare_environment_lock(lock)
     plan = reconstruction_plan(lock)
+    loaded_comparison = load_run(run.result.artifact_dir).environment_comparison()
+    loaded_plan = load_run(run.result.artifact_dir).reconstruction_plan()
     assert lock["packages"]
     assert comparison["match"] is True
     assert plan["approval_required"] is True
     assert plan["safe_to_execute"] is False
     assert plan["commands"][0][0] == "python"
+    assert loaded_comparison["match"] is True
+    assert loaded_plan["approval_required"] is True
 
 
 def test_relative_root_is_resolved_and_outputs_are_verifiable(tmp_path: Path, monkeypatch) -> None:

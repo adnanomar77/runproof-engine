@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .diff import RunDiff, compare_manifests
+from .environment import compare_environment_lock, reconstruction_plan
 from .provenance import ProvenanceGraph
 from .utils import file_metadata, read_json, sha256_file
 
@@ -57,21 +58,20 @@ class LoadedRun:
     def provenance(self) -> ProvenanceGraph:
         graph_path = self.artifact_dir / "provenance.json"
         if graph_path.is_file():
-            payload = read_json(graph_path)
-            graph = ProvenanceGraph(run_id=str(payload.get("run_id", self.run_id)))
-            graph.nodes.clear()
-            for node in payload.get("nodes", []):
-                graph.add_node(
-                    str(node.get("kind", "unknown")),
-                    str(node.get("label", "node")),
-                    digest=node.get("digest"),
-                    attributes=node.get("attributes", {}),
-                )
-            for edge in payload.get("edges", []):
-                graph.add_edge(str(edge.get("source")), str(edge.get("target")), str(edge.get("kind", "related")), attributes=edge.get("attributes", {}))
-            graph.run_node = next((node_id for node_id, node in graph.nodes.items() if node.kind == "run"), graph.run_node)
-            return graph
+            return ProvenanceGraph.from_dict(read_json(graph_path))
         return ProvenanceGraph.from_manifest(self.manifest)
+
+    def environment_comparison(self) -> dict[str, Any]:
+        lock_path = self.artifact_dir / "environment" / "environment.lock.json"
+        if not lock_path.is_file():
+            return {"match": False, "reason": "environment lock is missing"}
+        return compare_environment_lock(read_json(lock_path))
+
+    def reconstruction_plan(self, *, python_executable: str = "python") -> dict[str, Any]:
+        lock_path = self.artifact_dir / "environment" / "environment.lock.json"
+        if not lock_path.is_file():
+            raise FileNotFoundError(f"environment lock not found: {lock_path}")
+        return reconstruction_plan(read_json(lock_path), python_executable=python_executable)
 
     def verify_integrity(self) -> ReplayReport:
         reasons: list[str] = []
