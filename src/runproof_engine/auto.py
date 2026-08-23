@@ -67,6 +67,7 @@ class AutoCapture:
         self.capture_outputs = tuple(Path(path).expanduser() for path in (capture_outputs or []))
         self._uninstallers: list[Any] = []
         self.include_paths = [Path(path).expanduser().resolve() for path in (include_paths or [])]
+        self._capture_cache: dict[str, bool] = {}
         self._started = False
         self._stopped = False
         self._monitoring_id: int | None = None
@@ -245,19 +246,22 @@ class AutoCapture:
         }
 
     def _should_capture(self, filename: str) -> bool:
+        cached = self._capture_cache.get(filename)
+        if cached is not None:
+            return cached
         try:
             path = Path(filename).expanduser().resolve()
         except (OSError, RuntimeError):
+            self._capture_cache[filename] = False
             return False
-        if path == Path("<string>") or not path.is_file():
-            return False
-        if self._package_root in path.parents or path == self._package_root:
-            return False
-        if not self.include_stdlib and any(root in path.parents for root in self._stdlib_roots):
-            return False
-        if self.include_paths:
-            return any(path == root or root in path.parents for root in self.include_paths)
-        return True
+        if path == Path("<string>") or not path.is_file() or self._package_root in path.parents or path == self._package_root or not self.include_stdlib and any(root in path.parents for root in self._stdlib_roots):
+            decision = False
+        elif self.include_paths:
+            decision = any(path == root or root in path.parents for root in self.include_paths)
+        else:
+            decision = True
+        self._capture_cache[filename] = decision
+        return decision
 
     def _record(self, event: str, details: dict[str, Any]) -> None:
         if not self._stopped:

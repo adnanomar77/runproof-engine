@@ -123,6 +123,71 @@ def test_httpx_async_adapter_records_real_local_http(tmp_path: Path) -> None:
     assert loaded.verify_integrity().status == "verified_with_boundaries"
 
 
+def test_polars_adapter_records_real_file_boundaries(tmp_path: Path) -> None:
+    polars = pytest.importorskip("polars")
+    source = tmp_path / "data.csv"
+    target = tmp_path / "written.csv"
+    source.write_text("value\n3\n4\n", encoding="utf-8")
+
+    with auto_run("polars-real", root=tmp_path / "runs", backend="trace", include_paths=[Path(__file__).parent]) as run:
+        frame = polars.read_csv(source)
+        frame.write_csv(target)
+
+    loaded = load_run(run.result.artifact_dir)
+    events = json.loads((loaded.artifact_dir / "execution" / "trace.json").read_text(encoding="utf-8"))
+    assert any(event["event"] == "dataframe_read" and event["payload"].get("adapter") == "polars" for event in events)
+    assert any(event["event"] == "dataframe_written" and event["payload"].get("adapter") == "polars" for event in events)
+    assert loaded.verify_integrity().status == "verified"
+
+
+def test_sqlalchemy_adapter_records_real_sqlite_queries(tmp_path: Path) -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    database = tmp_path / "sqlalchemy.sqlite3"
+    with auto_run("sqlalchemy-real", root=tmp_path / "runs", backend="trace", include_paths=[Path(__file__).parent]) as run:
+        engine = sqlalchemy.create_engine(f"sqlite:///{database}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql("create table records (value integer)")
+            connection.exec_driver_sql("insert into records values (11)")
+            assert connection.exec_driver_sql("select value from records").scalar_one() == 11
+        engine.dispose()
+
+    loaded = load_run(run.result.artifact_dir)
+    events = json.loads((loaded.artifact_dir / "execution" / "trace.json").read_text(encoding="utf-8"))
+    assert any(event["event"] == "sql_query" and event["payload"].get("adapter") == "sqlalchemy" for event in events)
+    assert any(boundary["kind"] == "database_state" for boundary in loaded.manifest["boundaries"])
+
+
+def test_jupyter_adapter_records_real_notebook_execution(tmp_path: Path) -> None:
+    nbformat = pytest.importorskip("nbformat")
+    nbclient = pytest.importorskip("nbclient")
+    notebook = nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell("value = 6 * 7")])
+
+    with auto_run("jupyter-real", root=tmp_path / "runs", backend="trace", include_paths=[Path(__file__).parent]) as run:
+        client = nbclient.NotebookClient(notebook, kernel_name="python3")
+        client.execute()
+
+    loaded = load_run(run.result.artifact_dir)
+    events = json.loads((loaded.artifact_dir / "execution" / "trace.json").read_text(encoding="utf-8"))
+    assert any(event["event"] == "notebook_execution_started" for event in events)
+    assert any(event["event"] == "notebook_execution_completed" for event in events)
+    assert any(boundary["kind"] == "notebook_kernel_state" for boundary in loaded.manifest["boundaries"])
+
+
+def test_joblib_adapter_records_real_model_file(tmp_path: Path) -> None:
+    joblib = pytest.importorskip("joblib")
+    target = tmp_path / "model.joblib"
+    model = {"weights": [1, 2, 3]}
+
+    with auto_run("joblib-real", root=tmp_path / "runs", backend="trace", include_paths=[Path(__file__).parent]) as run:
+        joblib.dump(model, target)
+        assert joblib.load(target) == model
+
+    loaded = load_run(run.result.artifact_dir)
+    events = json.loads((loaded.artifact_dir / "execution" / "trace.json").read_text(encoding="utf-8"))
+    assert any(event["event"] == "ml_artifact_operation" and event["payload"].get("adapter") == "joblib" for event in events)
+    assert (loaded.artifact_dir / "outputs" / "auto" / "joblib.dump").is_file()
+
+
 def test_httpx_adapter_records_real_local_http(tmp_path: Path) -> None:
     httpx = pytest.importorskip("httpx")
     server = ThreadingHTTPServer(("127.0.0.1", 0), JsonHandler)
