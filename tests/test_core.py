@@ -141,6 +141,19 @@ def test_policy_blocks_sensitive_action_and_preserves_artifact(tmp_path: Path) -
     assert any(event["event"] == "action_blocked" for event in json.loads((artifact / "execution" / "trace.json").read_text(encoding="utf-8")))
 
 
+def test_external_boundary_is_reported_without_false_verification(tmp_path: Path) -> None:
+    with verified("boundary", root=tmp_path / "runs") as run:
+        run.boundary(
+            "external_service",
+            target="service.example",
+            reason="service state was not captured",
+            replay="requires_live_service",
+        )
+    assert run.result.status == "verified_with_boundaries"
+    manifest = json.loads((run.result.artifact_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["boundaries"][0]["kind"] == "external_service"
+
+
 def test_explicit_approval_is_recorded(tmp_path: Path) -> None:
     with verified("approved", root=tmp_path / "runs") as run:
         decision = run.authorize("upload", target="https://example.invalid", approved=True)

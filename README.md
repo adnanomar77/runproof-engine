@@ -36,6 +36,26 @@ print(run.result.artifact_dir)
 
 This creates a run directory with a manifest, input metadata, output metadata, trace events, checks, and an environment snapshot. The input is not silently replaced by generated data. File contents are fingerprinted, while copying full inputs is explicit and configurable.
 
+## Automatic capture
+
+For whole-process observation, use `auto_run`. It installs a Python execution observer for the lifetime of the context. On Python 3.12 and newer it uses `sys.monitoring` when available; otherwise it falls back to `sys.settrace`. The observer records bounded call, return, and exception events without requiring every function to be wrapped manually.
+
+```python
+from pathlib import Path
+from runproof_engine import auto_run
+
+with auto_run(
+    "automatic-report",
+    root="runs",
+    include_paths=[Path("src")],
+) as run:
+    report = build_report(real_input)
+    run.observe(report, name="report")
+    run.output("report.json", report)
+```
+
+Automatic capture is an evidence layer, not a sandbox. It does not serialize every local variable, intercept every native extension, or make external services deterministic. Use adapters or explicit `run.input`, `run.step`, and `run.external_call` calls when a boundary needs stronger evidence.
+
 ## Replay and comparison
 
 ```python
@@ -50,11 +70,12 @@ print(comparison.to_dict())
 print(comparison.render())
 ```
 
-`strict` replay uses the captured input when it is available and checks whether the new execution remains comparable. A fresh run can use current inputs and can be compared with a previous run to identify changes.
+Without a runner, `replay()` verifies the captured artifact and reports `replay_ready`; it does not silently re-execute arbitrary Python. To perform a real replay, provide a user-controlled runner that invokes the original workflow and returns the new artifact. The resulting run can then be compared with the previous run to identify evidence-backed changes.
 
 ## Statuses
 
-- `verified`: execution completed and all declared checks passed.
+- `verified`: execution completed and all declared checks passed with no recorded evidence boundary.
+- `verified_with_boundaries`: execution completed and the artifact is intact, but one or more external or non-deterministic effects remain outside the captured evidence.
 - `verified_with_warnings`: execution completed but comparability or external-source evidence is limited.
 - `failed`: execution or a required check failed.
 - `blocked`: a declared policy prevented a sensitive action.
@@ -66,7 +87,7 @@ RunProof records metadata and hashes by default. Full input copying is opt-in. S
 
 ## Project status
 
-The current repository implements the local core: run lifecycle, file fingerprints, JSON-safe artifacts, step tracing, assertions, replay, and explainable diffs. Optional integrations are intentionally separated from the core so the library remains useful without a cloud account or a specific AI provider.
+The current repository implements the local core: run lifecycle, file fingerprints, JSON-safe artifacts, explicit step tracing, automatic Python call/return observation, assertions, replay readiness, and explainable diffs. Optional integrations are intentionally separated from the core so the library remains useful without a cloud account or a specific AI provider.
 
 ## License
 

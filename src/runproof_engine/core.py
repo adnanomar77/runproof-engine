@@ -138,6 +138,7 @@ class RunContext:
         self._outputs: list[dict[str, Any]] = []
         self._observations: list[dict[str, Any]] = []
         self._events: list[dict[str, Any]] = []
+        self._boundaries: list[dict[str, Any]] = []
         self._environment: dict[str, Any] | None = None
         self._status = "running"
         self._error: dict[str, Any] | None = None
@@ -184,6 +185,9 @@ class RunContext:
         elif any(not check.passed for check in self._checks):
             self._status = "failed" if self.fail_on_check else "verified_with_warnings"
             self._event("checks_completed", {"failed": True})
+        elif self._boundaries:
+            self._status = "verified_with_boundaries"
+            self._event("checks_completed", {"failed": False, "boundaries": len(self._boundaries)})
         else:
             self._status = "verified"
             self._event("checks_completed", {"failed": False})
@@ -196,6 +200,24 @@ class RunContext:
             "at": utc_now(),
             "payload": safe_value(payload),
         })
+
+    def boundary(
+        self,
+        kind: str,
+        *,
+        target: str | None = None,
+        reason: str,
+        replay: str = "unknown",
+    ) -> None:
+        """Record an observed effect whose complete state is outside the artifact."""
+        record = {
+            "kind": kind,
+            "target": target,
+            "reason": reason,
+            "replay": replay,
+        }
+        self._boundaries.append(record)
+        self._event("evidence_boundary", record)
 
     def authorize(self, action: str, *, approved: bool = False, target: str | None = None) -> dict[str, Any]:
         """Authorize a sensitive action and record the decision in the trace."""
@@ -519,6 +541,7 @@ class RunContext:
             "inputs": self._inputs,
             "outputs": self._outputs,
             "observations": self._observations,
+            "boundaries": self._boundaries,
             "steps": [step.to_dict() for step in self._steps],
             "checks": [check.to_dict() for check in self._checks],
             "environment": self._environment,
@@ -529,6 +552,7 @@ class RunContext:
             },
             "replay": {
                 "possible_steps": sum(step.replayable for step in self._steps),
+                "boundaries": len(self._boundaries),
                 "total_steps": len(self._steps),
                 "note": "Replayability is reported from captured evidence; external sources may remain non-deterministic.",
             },

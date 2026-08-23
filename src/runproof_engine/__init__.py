@@ -1,3 +1,4 @@
+from .auto import AutoCapture, auto_run
 from .core import (
     CheckRecord,
     ReplayUnavailable,
@@ -12,6 +13,7 @@ from .policy import Policy, PolicyDenied, safe_default_policy
 from .replay import LoadedRun, ReplayReport, load_run
 
 __all__ = [
+    "AutoCapture",
     "CheckRecord",
     "Difference",
     "LoadedRun",
@@ -24,6 +26,7 @@ __all__ = [
     "RunProofError",
     "RunResult",
     "StepRecord",
+    "auto_run",
     "compare_manifests",
     "load_run",
     "safe_default_policy",
