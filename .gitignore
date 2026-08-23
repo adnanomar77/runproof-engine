@@ -13,3 +13,5 @@ runs/
 .env.*
 !.env.example
 .DS_Store
+
+demo-runs/
