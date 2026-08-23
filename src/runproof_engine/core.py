@@ -308,6 +308,26 @@ class RunContext:
         self._event("output_saved", record)
         return target
 
+    def capture_file(self, source: str | Path, *, name: str | None = None) -> Path:
+        """Copy a real file written by the observed process into the artifact outputs."""
+        source_path = Path(source).expanduser().resolve()
+        metadata = file_metadata(source_path)
+        target_name = name or source_path.name
+        target = self._output_target(Path("auto") / target_name)
+        if target.exists():
+            target = self._output_target(Path("auto") / f"{fingerprint(str(source_path))[:8]}-{target_name}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target)
+        metadata.update({
+            "name": target_name,
+            "source_path": str(source_path),
+            "path": str(target.relative_to(self.artifact_dir)),
+            "captured_copy": str(target.relative_to(self.artifact_dir)),
+        })
+        self._outputs.append(metadata)
+        self._event("automatic_output_captured", metadata)
+        return target
+
     def save_file(self, path: str | Path, *, source: str | Path | None = None, content: str | bytes | None = None) -> Path:
         """Save a real text or binary artifact and register its hash."""
         target = self._output_target(path)

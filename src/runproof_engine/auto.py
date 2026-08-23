@@ -50,6 +50,7 @@ class AutoCapture:
         capture_returns: bool = True,
         capture_audit: bool = True,
         adapters: tuple[Adapter, ...] | list[Adapter] | None = None,
+        capture_outputs: list[str | os.PathLike[str]] | None = None,
     ) -> None:
         if backend not in {"auto", "monitoring", "trace"}:
             raise ValueError("backend must be 'auto', 'monitoring', or 'trace'")
@@ -59,6 +60,7 @@ class AutoCapture:
         self.capture_returns = capture_returns
         self.capture_audit = capture_audit
         self.adapters = tuple(default_adapters() if adapters is None else adapters)
+        self.capture_outputs = tuple(Path(path).expanduser() for path in (capture_outputs or []))
         self._uninstallers: list[Any] = []
         self.include_paths = [Path(path).expanduser().resolve() for path in (include_paths or [])]
         self._started = False
@@ -117,6 +119,7 @@ class AutoCapture:
     def stop(self) -> None:
         if not self._started or self._stopped:
             return
+        self._capture_outputs()
         for uninstall in reversed(self._uninstallers):
             try:
                 uninstall()
@@ -143,6 +146,18 @@ class AutoCapture:
             sys.settrace(self._previous_trace)
         if hasattr(threading, "settrace") and (self._previous_thread_trace is not None or threading.gettrace() is not None):
             threading.settrace(self._previous_thread_trace)
+
+    def _capture_outputs(self) -> None:
+        for source in self.capture_outputs:
+            try:
+                self.context.capture_file(source)
+            except FileNotFoundError:
+                self.context.boundary(
+                    "missing_output",
+                    target=str(source),
+                    reason="configured automatic output was not present at run completion",
+                    replay="not_available",
+                )
 
     def _install_adapters(self) -> None:
         for adapter in self.adapters:
@@ -298,7 +313,7 @@ def auto_run(name: str, **kwargs: Any) -> AutoCapture:
     """Create a context manager that observes Python execution automatically."""
     capture_options = {
         key: kwargs.pop(key)
-        for key in ("include_paths", "include_stdlib", "backend", "capture_returns", "capture_audit", "adapters")
+        for key in ("include_paths", "include_stdlib", "backend", "capture_returns", "capture_audit", "adapters", "capture_outputs")
         if key in kwargs
     }
     context = RunContext(name, **kwargs)
