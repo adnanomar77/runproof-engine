@@ -32,7 +32,7 @@ database = ["SQLAlchemy>=2.0", "psycopg[binary]>=3.1"]
 jupyter = ["nbclient>=0.10", "nbformat>=5.9"]
 cloud = ["boto3>=1.34"]
 ml = ["joblib>=1.3"]
-dev = ["pytest>=8", "ruff>=0.6", "build>=1.2", "twine>=5"]
+dev = ["pytest>=8", "ruff>=0.6", "build>=1.2", "twine>=5", "hypothesis>=6.100", "bandit>=1.7"]
 
 [project.scripts]
 runproof = "runproof_engine.cli:main"

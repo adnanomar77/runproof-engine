@@ -10,7 +10,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import sqlite3
-import subprocess
+import subprocess  # nosec B404 - observer wraps caller-provided subprocess.run without shell execution
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any

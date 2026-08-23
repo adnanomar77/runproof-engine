@@ -299,7 +299,9 @@ class AutoCapture:
             return None
         filename = frame.f_code.co_filename
         if not self._should_capture(filename):
-            return self._trace
+            return None
+        if event == "call":
+            frame.f_trace_lines = False
         details = self._source_details(
             filename,
             frame.f_lineno,

@@ -10,6 +10,7 @@ from .core import (
     verified,
 )
 from .diff import Difference, RunDiff, compare_manifests
+from .environment import compare_environment_lock, environment_lock, reconstruction_plan
 from .integrations import (
     Boto3Adapter,
     HTTPXAdapter,
@@ -66,11 +67,14 @@ __all__ = [
     "UrllibAdapter",
     "auto_run",
     "available_adapters",
+    "compare_environment_lock",
     "compare_manifests",
     "default_adapters",
+    "environment_lock",
     "format_traceparent",
     "load_run",
     "parse_traceparent",
+    "reconstruction_plan",
     "safe_default_policy",
     "verified",
 ]

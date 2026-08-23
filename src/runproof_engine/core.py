@@ -12,6 +12,7 @@ from time import perf_counter
 from types import TracebackType
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from .environment import environment_lock
@@ -452,6 +453,9 @@ class RunContext:
         approved: bool = False,
     ) -> Any:
         """Perform and record a real HTTP request after explicit authorization."""
+        scheme = urlsplit(url).scheme.lower()
+        if scheme not in {"http", "https"}:
+            raise RunProofError("request only permits http and https URLs")
         self.authorize("network", approved=approved, target=url)
         request_headers = dict(headers or {})
         safe_headers = {
@@ -473,7 +477,7 @@ class RunContext:
             "body_sha256": sha256_bytes(request_body) if request_body else None,
         }
         try:
-            with urlopen(request, timeout=timeout) as response:
+            with urlopen(request, timeout=timeout) as response:  # nosec B310 - scheme is allowlisted to http/https above
                 raw = response.read(10 * 1024 * 1024 + 1)
                 truncated = len(raw) > 10 * 1024 * 1024
                 raw = raw[:10 * 1024 * 1024]
