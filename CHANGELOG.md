@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 — version consistency fix
+
+This patch aligns `runproof_engine.__version__` with the distribution metadata and adds a regression test that compares the package version to `pyproject.toml`.
+
 ## 0.1.1 — path resolution fix
 
 This patch resolves relative run roots before artifact creation. Outputs now remain safely inside an absolute artifact directory even when the caller uses `root="runs"`. A regression test covers the original failure mode.

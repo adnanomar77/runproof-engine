@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
+import runproof_engine
 from runproof_engine import PolicyDenied, RunProofError, load_run, verified
 
 
@@ -19,6 +21,13 @@ def make_run(root: Path, input_path: Path, value: int) -> Path:
         run.assert_true(result >= 0, "result must be non-negative")
         run.output("result.json", {"value": result})
     return run.result.artifact_dir
+
+
+def test_package_version_matches_project_metadata() -> None:
+    project_text = (Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    project_version = re.search(r'^version = "([^"]+)"$', project_text, re.MULTILINE)
+    assert project_version is not None
+    assert runproof_engine.__version__ == project_version.group(1)
 
 
 def test_run_records_real_input_steps_output_and_checks(tmp_path: Path) -> None:
