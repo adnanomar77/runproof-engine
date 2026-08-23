@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from types import TracebackType
-from typing import Any, Self
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -155,7 +155,7 @@ class RunContext:
         safe = "".join(character if character.isalnum() or character in "-_" else "_" for character in value)
         return safe.strip("_") or "run"
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> RunContext:  # noqa: PYI034 - runtime annotation is compatible with Python 3.10
         self.artifact_dir.mkdir(parents=True, exist_ok=False)
         for directory in ("inputs", "outputs", "checks", "execution", "environment"):
             (self.artifact_dir / directory).mkdir()
