@@ -59,7 +59,11 @@ class AutoCapture:
         self.include_stdlib = include_stdlib
         self.capture_returns = capture_returns
         self.capture_audit = capture_audit
-        self.adapters = tuple(default_adapters() if adapters is None else adapters)
+        if adapters is None:
+            from .integrations import available_adapters
+
+            adapters = (*default_adapters(), *available_adapters())
+        self.adapters = tuple(adapters)
         self.capture_outputs = tuple(Path(path).expanduser() for path in (capture_outputs or []))
         self._uninstallers: list[Any] = []
         self.include_paths = [Path(path).expanduser().resolve() for path in (include_paths or [])]

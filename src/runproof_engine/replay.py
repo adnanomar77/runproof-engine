@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .diff import RunDiff, compare_manifests
+from .provenance import ProvenanceGraph
 from .utils import file_metadata, read_json, sha256_file
 
 
@@ -51,6 +52,26 @@ class LoadedRun:
     @property
     def status(self) -> str:
         return str(self.manifest.get("run", {}).get("status", "unknown"))
+
+    @property
+    def provenance(self) -> ProvenanceGraph:
+        graph_path = self.artifact_dir / "provenance.json"
+        if graph_path.is_file():
+            payload = read_json(graph_path)
+            graph = ProvenanceGraph(run_id=str(payload.get("run_id", self.run_id)))
+            graph.nodes.clear()
+            for node in payload.get("nodes", []):
+                graph.add_node(
+                    str(node.get("kind", "unknown")),
+                    str(node.get("label", "node")),
+                    digest=node.get("digest"),
+                    attributes=node.get("attributes", {}),
+                )
+            for edge in payload.get("edges", []):
+                graph.add_edge(str(edge.get("source")), str(edge.get("target")), str(edge.get("kind", "related")), attributes=edge.get("attributes", {}))
+            graph.run_node = next((node_id for node_id, node in graph.nodes.items() if node.kind == "run"), graph.run_node)
+            return graph
+        return ProvenanceGraph.from_manifest(self.manifest)
 
     def verify_integrity(self) -> ReplayReport:
         reasons: list[str] = []

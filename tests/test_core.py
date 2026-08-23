@@ -49,6 +49,12 @@ def test_run_records_real_input_steps_output_and_checks(tmp_path: Path) -> None:
     loaded = load_run(artifact)
     assert loaded.verify_integrity().status == "verified"
     assert loaded.replay(mode="strict").status == "replay_ready"
+    graph = loaded.provenance
+    kinds = {node.kind for node in graph.nodes.values()}
+    edge_kinds = {edge.kind for edge in graph.edges}
+    assert {"run", "input", "step", "value", "output", "check"}.issubset(kinds)
+    assert {"contains", "used", "produces", "input", "output", "asserts"}.issubset(edge_kinds)
+    assert (artifact / "provenance.json").is_file()
 
 
 def test_relative_root_is_resolved_and_outputs_are_verifiable(tmp_path: Path, monkeypatch) -> None:

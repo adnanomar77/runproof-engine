@@ -14,6 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .policy import Policy, PolicyDenied, safe_default_policy
+from .provenance import ProvenanceGraph
 from .utils import (
     environment_snapshot,
     file_metadata,
@@ -128,6 +129,7 @@ class RunContext:
         self.fail_on_check = fail_on_check
         self.policy = policy or safe_default_policy()
         self.run_id = f"{utc_now().replace(':', '').replace('-', '')}-{uuid.uuid4().hex[:10]}"
+        self._provenance = ProvenanceGraph(run_id=self.run_id)
         self.artifact_dir = self.root / self._safe_name(name) / self.run_id
         self._started_at = utc_now()
         self._started_clock = 0.0
@@ -217,6 +219,8 @@ class RunContext:
             "replay": replay,
         }
         self._boundaries.append(record)
+        node = self._provenance.add_node("boundary", str(target or kind), digest=fingerprint(record), attributes=record)
+        self._provenance.link_to_run(node, "limits")
         self._event("evidence_boundary", record)
 
     def authorize(self, action: str, *, approved: bool = False, target: str | None = None) -> dict[str, Any]:
@@ -244,6 +248,8 @@ class RunContext:
             metadata["captured_copy"] = destination
         metadata["name"] = record_name
         self._inputs.append(metadata)
+        node = self._provenance.add_node("input", record_name, digest=metadata.get("sha256"), attributes=metadata)
+        self._provenance.link_to_run(node, "input")
         self._event("input_registered", metadata)
         write_json(self.artifact_dir / "inputs" / f"{self._safe_name(record_name)}.json", metadata)
         return Path(metadata["path"])
@@ -269,6 +275,14 @@ class RunContext:
                 replayable=self._is_json_replayable(args, kwargs, output),
             )
             self._steps.append(record)
+            step_node = self._provenance.add_node("step", name, digest=descriptor.get("source_sha256"), attributes=record.to_dict())
+            self._provenance.add_edge(self._provenance.run_node, step_node, "contains")
+            for index, summary in enumerate(record.input_summaries):
+                input_node = self._provenance.add_node("value", f"{name}:input:{index}", digest=summary.get("fingerprint"), attributes=summary)
+                self._provenance.add_edge(input_node, step_node, "used")
+            if record.output_summary and record.output_summary.get("fingerprint"):
+                output_node = self._provenance.add_node("value", f"{name}:output", digest=record.output_summary["fingerprint"], attributes=record.output_summary)
+                self._provenance.add_edge(step_node, output_node, "produces")
             self._event("step_completed", {"name": name, "output": record.output_summary})
             return output
         except Exception as error:
@@ -287,6 +301,8 @@ class RunContext:
                 },
             )
             self._steps.append(record)
+            step_node = self._provenance.add_node("step", name, digest=descriptor.get("source_sha256"), attributes=record.to_dict())
+            self._provenance.add_edge(self._provenance.run_node, step_node, "contains")
             self._event("step_failed", {"name": name, "error": record.error or {}})
             raise
 
@@ -305,6 +321,8 @@ class RunContext:
             "value_summary": summarize(value),
         }
         self._outputs.append(record)
+        node = self._provenance.add_node("output", str(record["name"]), digest=record.get("sha256"), attributes=record)
+        self._provenance.link_to_run(node, "output")
         self._event("output_saved", record)
         return target
 
@@ -325,6 +343,8 @@ class RunContext:
             "captured_copy": str(target.relative_to(self.artifact_dir)),
         })
         self._outputs.append(metadata)
+        node = self._provenance.add_node("output", str(metadata["name"]), digest=metadata.get("sha256"), attributes=metadata)
+        self._provenance.link_to_run(node, "output")
         self._event("automatic_output_captured", metadata)
         return target
 
@@ -349,6 +369,8 @@ class RunContext:
             "sha256": file_metadata(target)["sha256"],
         }
         self._outputs.append(record)
+        node = self._provenance.add_node("output", str(record["name"]), digest=record.get("sha256"), attributes=record)
+        self._provenance.link_to_run(node, "output")
         self._event("file_saved", record)
         return target
 
@@ -356,6 +378,9 @@ class RunContext:
         """Record a bounded summary of an in-memory value without copying its full contents."""
         record = {"name": name, "summary": summarize(value)}
         self._observations.append(record)
+        summary = record.get("summary") or {}
+        node = self._provenance.add_node("observation", name, digest=summary.get("fingerprint"), attributes=record)
+        self._provenance.link_to_run(node, "observes")
         self._event("value_observed", record)
         return value
 
@@ -511,7 +536,10 @@ class RunContext:
     def _record_check(self, name: str, passed: bool, message: str) -> bool:
         check = CheckRecord(name=name, passed=passed, message=message)
         self._checks.append(check)
-        self._event("check", check.to_dict())
+        check_record = check.to_dict()
+        node = self._provenance.add_node("check", name, digest=fingerprint(check_record), attributes=check_record)
+        self._provenance.add_edge(self._provenance.run_node, node, "asserts")
+        self._event("check", check_record)
         return passed
 
     def _output_target(self, path: str | Path) -> Path:
@@ -578,6 +606,7 @@ class RunContext:
             },
         }
         write_json(self.artifact_dir / "manifest.json", manifest)
+        write_json(self.artifact_dir / "provenance.json", self._provenance.to_dict())
         write_json(self.artifact_dir / "execution" / "trace.json", self._events)
         write_json(self.artifact_dir / "checks" / "results.json", [check.to_dict() for check in self._checks])
         write_json(self.artifact_dir / "execution" / "steps.json", [step.to_dict() for step in self._steps])
